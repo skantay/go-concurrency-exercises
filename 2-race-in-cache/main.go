@@ -10,13 +10,15 @@ package main
 
 import (
 	"container/list"
+	"sync"
 	"testing"
 )
 
 // CacheSize determines how big the cache can grow
 const CacheSize = 100
 
-// KeyStoreCacheLoader is an interface for the KeyStoreCache
+//
+
 type KeyStoreCacheLoader interface {
 	// Load implements a function where the cache should gets it's content from
 	Load(string) string
@@ -31,25 +33,29 @@ type page struct {
 type KeyStoreCache struct {
 	cache map[string]*list.Element
 	pages list.List
-	load  func(string) string
+	load  KeyStoreCacheLoader
+	m     sync.RWMutex
 }
 
 // New creates a new KeyStoreCache
 func New(load KeyStoreCacheLoader) *KeyStoreCache {
 	return &KeyStoreCache{
-		load:  load.Load,
+		load:  load,
 		cache: make(map[string]*list.Element),
 	}
 }
 
 // Get gets the key from cache, loads it from the source if needed
 func (k *KeyStoreCache) Get(key string) string {
+	k.m.Lock()
+	defer k.m.Unlock()
+
 	if e, ok := k.cache[key]; ok {
 		k.pages.MoveToFront(e)
 		return e.Value.(page).Value
 	}
 	// Miss - load from database and save it in cache
-	p := page{key, k.load(key)}
+	p := page{key, k.load.Load(key)}
 	// if cache is full remove the least used item
 	if len(k.cache) >= CacheSize {
 		end := k.pages.Back()
